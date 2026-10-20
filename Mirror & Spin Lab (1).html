@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mirror & Spin Lab</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{--bg1:#0f172a;--bg2:#1e293b;--card:#fff;--ink:#1e1b2e;--accent:#ec4899;--good:#16a34a;--bad:#dc2626;--muted:#6b7280;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--card:#1f2937;--ink:#f3f4f6;--muted:#9ca3af;}}
+:root[data-theme="dark"]{--card:#1f2937;--ink:#f3f4f6;--muted:#9ca3af;}
+*{box-sizing:border-box;}
+#bgCanvas{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;display:block;}
+body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135deg,var(--bg1),var(--bg2));min-height:100vh;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);display:flex;justify-content:center;padding-left:12px;padding-right:12px;}
+.wrap{width:100%;max-width:720px;padding:20px 0 40px;position:relative;z-index:1;}
+h1{color:#fff;text-align:center;margin-bottom:2px;}
+.sub{color:#e9d5ff;text-align:center;margin-bottom:14px;font-size:.9rem;}
+.tabs{display:flex;gap:8px;justify-content:center;margin-bottom:14px;}
+.tab{padding:8px 16px;border-radius:20px;border:2px solid #fff3;background:transparent;color:#fff;font-weight:700;cursor:pointer;}
+.tab.active{background:var(--accent);border-color:var(--accent);}
+.card{background:var(--card);color:var(--ink);border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.35);}
+.stats{display:flex;justify-content:space-between;font-weight:600;margin-bottom:8px;font-size:.9rem;}
+#stage{width:100%;height:240px;border-radius:12px;background:radial-gradient(circle at 50% 30%,#fdf2f8,#fce7f3);cursor:grab;touch-action:none;display:block;}
+.q{font-weight:600;text-align:center;margin:8px 0;}
+.hint{text-align:center;font-size:.75rem;color:var(--muted);margin-top:-4px;margin-bottom:6px;}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+button.opt{padding:12px;border-radius:10px;border:2px solid #d1d5db;background:transparent;color:var(--ink);cursor:pointer;font-size:1rem;}
+button.opt.correct{background:var(--good);border-color:var(--good);color:#fff;}
+button.opt.wrong{background:var(--bad);border-color:var(--bad);color:#fff;}
+.feedback{min-height:24px;margin-top:8px;font-weight:600;text-align:center;}
+.next{display:none;margin:12px auto 0;padding:10px 18px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:700;cursor:pointer;}
+.done{text-align:center;padding:16px;}
+.restart{margin-top:10px;padding:10px 20px;border-radius:10px;border:none;background:#3b82f6;color:#fff;font-weight:700;cursor:pointer;}
+</style>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+<div class="wrap">
+<h1>🪞 Mirror & Spin Lab</h1>
+<div class="sub">Reflections, lines of symmetry, and rotational symmetry — in 3D</div>
+<div class="tabs">
+  <button class="tab active" id="tabRef">Reflection</button>
+  <button class="tab" id="tabRot">Rotation</button>
+</div>
+<div class="card" id="card">
+  <div class="stats" id="statsRow"></div>
+  <canvas id="stage"></canvas>
+  <div class="hint">Drag to view the shape from any angle</div>
+  <div id="below"></div>
+</div>
+</div>
+<script>
+
+// ---------- animated 3D background ----------
+(function(){
+  const canvas=document.getElementById('bgCanvas');
+  if(!canvas || typeof THREE==='undefined') return;
+  const bgRenderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  bgRenderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  bgRenderer.setSize(window.innerWidth,window.innerHeight);
+  const bgScene=new THREE.Scene();
+  const bgCam=new THREE.PerspectiveCamera(55,window.innerWidth/window.innerHeight,0.1,100);
+  bgCam.position.set(0,0,9);
+  const bl=new THREE.DirectionalLight(0xffffff,1.1); bl.position.set(5,6,7); bgScene.add(bl);
+  bgScene.add(new THREE.AmbientLight(0xffffff,0.55));
+  const colors=[0xec4899,0x3b82f6];
+  const geos=[
+    new THREE.IcosahedronGeometry(1,0),
+    new THREE.TorusGeometry(0.7,0.24,10,26),
+    new THREE.OctahedronGeometry(1,0),
+    new THREE.TetrahedronGeometry(1.05,0),
+    new THREE.TorusKnotGeometry(0.55,0.16,64,8)
+  ];
+  const shapes=[];
+  const count = window.innerWidth<520? 7 : 12;
+  for(let i=0;i<count;i++){
+    const geo=geos[i%geos.length];
+    const wire=i%2===0;
+    const mat=new THREE.MeshStandardMaterial({color:colors[i%colors.length],wireframe:wire,transparent:true,opacity:wire?0.35:0.16,roughness:0.55,metalness:0.1});
+    const mesh=new THREE.Mesh(geo,mat);
+    const scl=0.5+Math.random()*0.9;
+    mesh.scale.set(scl,scl,scl);
+    mesh.position.set((Math.random()-0.5)*16,(Math.random()-0.5)*16,(Math.random()-0.5)*10-3);
+    mesh.rotation.set(Math.random()*Math.PI*2,Math.random()*Math.PI*2,Math.random()*Math.PI*2);
+    mesh.userData.rot={x:(Math.random()-0.5)*0.006,y:(Math.random()-0.5)*0.007};
+    mesh.userData.driftY=(Math.random()*0.006+0.002)*(Math.random()<0.5?1:-1);
+    bgScene.add(mesh); shapes.push(mesh);
+  }
+  function resizeBg(){ bgRenderer.setSize(window.innerWidth,window.innerHeight); bgCam.aspect=window.innerWidth/window.innerHeight; bgCam.updateProjectionMatrix(); }
+  window.addEventListener('resize',resizeBg);
+  function animateBg(){
+    requestAnimationFrame(animateBg);
+    shapes.forEach(s=>{
+      s.rotation.x+=s.userData.rot.x; s.rotation.y+=s.userData.rot.y;
+      s.position.y+=s.userData.driftY;
+      if(s.position.y>9) s.position.y=-9; if(s.position.y<-9) s.position.y=9;
+    });
+    bgCam.position.x = Math.sin(Date.now()*0.00007)*1.5;
+    bgCam.lookAt(0,0,0);
+    bgRenderer.render(bgScene,bgCam);
+  }
+  animateBg();
+})();
+// ---------- shared three.js setup ----------
+let renderer, scene, camera, group, dragging=false, lastX=0, lastY=0, spin=true, spinSpeed=0.012;
+function initThree(){
+  const canvas=document.getElementById('stage');
+  renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(45,1,0.1,100);
+  camera.position.set(0,0,5.2);
+  const light=new THREE.DirectionalLight(0xffffff,1.1); light.position.set(3,4,5); scene.add(light);
+  scene.add(new THREE.AmbientLight(0xffffff,0.75));
+  group=new THREE.Group(); group.rotation.x=0.35; group.rotation.y=-0.4; scene.add(group);
+  resize(); window.addEventListener('resize',resize);
+  canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.style.cursor='grabbing';});
+  window.addEventListener('pointerup',()=>{dragging=false;canvas.style.cursor='grab';});
+  window.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    group.rotation.y += (e.clientX-lastX)*0.01;
+    group.rotation.x += (e.clientY-lastY)*0.01;
+    lastX=e.clientX; lastY=e.clientY;
+  });
+  animate();
+}
+function resize(){
+  const canvas=document.getElementById('stage');
+  const w=canvas.clientWidth||400, h=240;
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+function animate(){
+  requestAnimationFrame(animate);
+  if(spin && group) group.rotation.z += spinSpeed;
+  renderer.render(scene,camera);
+}
+function clearGroup(){ while(group.children.length){ const c=group.children.pop(); c.geometry&&c.geometry.dispose(); scene.remove.length; group.remove(c); } }
+function shapeMesh(points,color,opacity=1){
+  const shape=new THREE.Shape();
+  shape.moveTo(points[0][0],points[0][1]);
+  for(let i=1;i<points.length;i++) shape.lineTo(points[i][0],points[i][1]);
+  shape.closePath();
+  const geo=new THREE.ExtrudeGeometry(shape,{depth:0.28,bevelEnabled:true,bevelThickness:0.03,bevelSize:0.03,bevelSegments:1});
+  geo.center();
+  const mat=new THREE.MeshStandardMaterial({color,transparent:opacity<1,opacity,side:THREE.DoubleSide});
+  return new THREE.Mesh(geo,mat);
+}
+function barMesh(w,h,d,color){
+  return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color}));
+}
+function makeLabel(text,color){
+  const c=document.createElement('canvas'); c.width=64;c.height=64;
+  const ctx=c.getContext('2d'); ctx.fillStyle=color; ctx.font='bold 42px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text,32,34);
+  const tex=new THREE.CanvasTexture(c);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex}));
+  sp.scale.set(0.5,0.5,0.5);
+  return sp;
+}
+
+// ---------- Reflection challenge ----------
+const refShapes=[
+  {points:[[-1.1,-1],[1.1,-1],[1.1,0.3],[0,1],[-1.1,0.3]], axis:'vertical', label:'House pentagon'},
+  {points:[[-1,-0.6],[0.2,-0.6],[0.2,-1],[1,-1],[1,1],[0.2,1],[0.2,0.6],[-1,0.6]], axis:'horizontal', label:'Notched block'},
+  {points:[[-1.1,-1],[1.1,-1],[1.1,0.3],[0,1],[-1.1,0.3]], axis:'vertical', label:'House pentagon'},
+  {points:[[-1,-0.6],[0.2,-0.6],[0.2,-1],[1,-1],[1,1],[0.2,1],[0.2,0.6],[-1,0.6]], axis:'horizontal', label:'Notched block'}
+];
+let refIdx=0, refScore=0;
+function buildRef(item, chosenId){
+  clearGroup();
+  group.add(shapeMesh(item.points,0xec4899,0.9));
+  const bars=[
+    {id:'A', mesh:barMesh(0.08,3,0.06,0x94a3b8), rot:0, type:'vertical', pos:[0,0,0.35]},
+    {id:'B', mesh:barMesh(3,0.08,0.06,0x94a3b8), rot:0, type:'horizontal', pos:[0,0,0.35]},
+    {id:'C', mesh:barMesh(3,0.08,0.06,0x94a3b8), rot:Math.PI/4, type:'diagonal', pos:[0,0,0.35]}
+  ];
+  bars.forEach(b=>{
+    b.mesh.rotation.z=b.rot; b.mesh.position.set(...b.pos);
+    if(b.type===item.axis) b.mesh.material.color.set(chosenId? (chosenId===b.id?0x16a34a:0x16a34a) :0x22c55e);
+    if(chosenId===b.id && b.type!==item.axis) b.mesh.material.color.set(0xdc2626);
+    group.add(b.mesh);
+    const lab=makeLabel(b.id, b.type===item.axis?'#16a34a':'#475569');
+    const off = b.type==='vertical'? [0,1.7,0.35] : b.type==='horizontal'? [1.7,0,0.35] : [1.3,1.3,0.35];
+    lab.position.set(...off);
+    group.add(lab);
+  });
+}
+function startRef(){ refIdx=0; refScore=0; spin=false; group&&(group.rotation.z=0); renderRef(); }
+function renderRef(){
+  document.getElementById('statsRow').innerHTML=`<span>Question ${Math.min(refIdx+1,refShapes.length)} of ${refShapes.length}</span><span>Score: ${refScore}</span>`;
+  const below=document.getElementById('below');
+  if(refIdx>=refShapes.length){
+    below.innerHTML=`<div class="done"><h2>🏁 Done!</h2><p>Score: <b>${refScore} / ${refShapes.length}</b></p>
+    <p style="color:var(--muted);font-size:.9rem;">Covers: reflecting a shape and identifying its line of reflection.</p>
+    <button class="restart" onclick="startRef()">Play Again</button></div>`;
+    return;
+  }
+  const item=refShapes[refIdx];
+  buildRef(item,null);
+  below.innerHTML=`<div class="q">Which grey bar (A, B or C) is the true line of reflection (mirror line) for this shape?</div>
+  <div class="opts" id="opts"></div><div class="feedback" id="fb"></div><button class="next" id="nextBtn">Next ▶</button>`;
+  const correct = item.axis==='vertical'?'A':item.axis==='horizontal'?'B':'C';
+  ['A','B','C'].forEach(o=>{
+    const b=document.createElement('button'); b.className='opt'; b.textContent=o;
+    b.onclick=()=>{
+      document.querySelectorAll('.opt').forEach(x=>x.disabled=true);
+      buildRef(item,o);
+      if(o===correct){ b.classList.add('correct'); refScore++; document.getElementById('fb').textContent='✅ Correct!'; document.getElementById('fb').style.color='var(--good)'; }
+      else{ b.classList.add('wrong'); document.querySelectorAll('.opt').forEach(x=>{ if(x.textContent===correct) x.classList.add('correct'); });
+        document.getElementById('fb').textContent=`❌ Correct answer: ${correct}`; document.getElementById('fb').style.color='var(--bad)'; }
+      document.getElementById('nextBtn').style.display='inline-block';
+    };
+    document.getElementById('opts').appendChild(b);
+  });
+}
+document.addEventListener('click',e=>{ if(e.target && e.target.id==='nextBtn'){ refIdx++; renderRef(); }});
+
+// ---------- Rotation challenge ----------
+const rotShapes=[
+  {name:'Square', order:4, points:[[-1,-1],[1,-1],[1,1],[-1,1]]},
+  {name:'Equilateral triangle', order:3, points:[[0,-1.2],[1.04,0.6],[-1.04,0.6]]},
+  {name:'Rectangle (non-square)', order:2, points:[[-1.4,-0.8],[1.4,-0.8],[1.4,0.8],[-1.4,0.8]]},
+  {name:'Regular pentagon', order:5, points:[[0,-1.15],[1.09,-0.36],[0.67,0.93],[-0.67,0.93],[-1.09,-0.36]]},
+  {name:'Parallelogram (non-rect)', order:2, points:[[-0.9,-0.8],[0.5,-0.8],[0.9,0.8],[-0.5,0.8]]},
+  {name:'Scalene triangle (irregular)', order:1, points:[[-1,-0.8],[0.7,-0.95],[0.9,0.75]]}
+];
+let rotOrder=[], rotIdx=0, rotScore=0;
+function startRot(){ rotOrder=rotShapes.slice().sort(()=>Math.random()-0.5); rotIdx=0; rotScore=0; spin=true; renderRot(); }
+function renderRot(){
+  document.getElementById('statsRow').innerHTML=`<span>Question ${Math.min(rotIdx+1,rotOrder.length)} of ${rotOrder.length}</span><span>Score: ${rotScore}</span>`;
+  const below=document.getElementById('below');
+  if(rotIdx>=rotOrder.length){
+    below.innerHTML=`<div class="done"><h2>🏁 Done!</h2><p>Score: <b>${rotScore} / ${rotOrder.length}</b></p>
+    <p style="color:var(--muted);font-size:.9rem;">Covers: finding the point and order of rotational symmetry.</p>
+    <button class="restart" onclick="startRot()">Play Again</button></div>`;
+    return;
+  }
+  const item=rotOrder[rotIdx];
+  clearGroup();
+  group.add(shapeMesh(item.points,0x3b82f6,0.95));
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(0.07,16,16), new THREE.MeshStandardMaterial({color:0xf59e0b}));
+  dot.position.set(0,0,0.3); group.add(dot);
+  below.innerHTML=`<div class="q">${item.name} is spinning about its centre point (the orange dot). What is its order of rotational symmetry?</div>
+  <div class="opts" id="opts"></div><div class="feedback" id="fb"></div><button class="next" id="nextBtn">Next ▶</button>`;
+  const correct=String(item.order);
+  const set=new Set([correct]);
+  while(set.size<4){ set.add(String(1+Math.floor(Math.random()*6))); }
+  Array.from(set).sort(()=>Math.random()-0.5).forEach(o=>{
+    const b=document.createElement('button'); b.className='opt'; b.textContent=o;
+    b.onclick=()=>{
+      document.querySelectorAll('.opt').forEach(x=>x.disabled=true);
+      if(o===correct){ b.classList.add('correct'); rotScore++; document.getElementById('fb').textContent='✅ Correct!'; document.getElementById('fb').style.color='var(--good)'; }
+      else{ b.classList.add('wrong'); document.querySelectorAll('.opt').forEach(x=>{ if(x.textContent===correct) x.classList.add('correct'); });
+        document.getElementById('fb').textContent=`❌ Correct answer: ${correct}`; document.getElementById('fb').style.color='var(--bad)'; }
+      document.getElementById('nextBtn').style.display='inline-block';
+    };
+    document.getElementById('opts').appendChild(b);
+  });
+}
+document.addEventListener('click',e=>{ if(e.target && e.target.id==='nextBtn'){ rotIdx++; renderRot(); }});
+
+function startMode(m){
+  document.getElementById('tabRef').classList.toggle('active',m==='ref');
+  document.getElementById('tabRot').classList.toggle('active',m==='rot');
+  if(m==='ref') startRef(); else startRot();
+}
+document.getElementById('tabRef').onclick=()=>startMode('ref');
+document.getElementById('tabRot').onclick=()=>startMode('rot');
+initThree();
+startMode('ref');
+</script>
+</body>
+</html>
